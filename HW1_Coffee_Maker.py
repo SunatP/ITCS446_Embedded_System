@@ -15,7 +15,7 @@ def main():
             customWrite(1,0);
             customWrite(2,0);
         delay(500)
-
+        
 
 if __name__ == "__main__":
     main()

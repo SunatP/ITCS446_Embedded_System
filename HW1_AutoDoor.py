@@ -40,6 +40,7 @@ def main():
 		delay(1000)
 		customWrite(0, "0");
 		delay(1000)
+		
 
 if __name__ == "__main__":
 	main()
