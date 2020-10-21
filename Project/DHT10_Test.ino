@@ -2,9 +2,6 @@
 #define DHTTYPE DHT10
 #define SegSource_Intlookup 0
 #define SegSource_LEDInit 1
-#define SegSource_LEDTempPre 2
-#define SegSource_LEDHumPre 3
-#define BUTTON_PIN_BITMASK 0x200000000                                // 2^33 in hex
 int Digits[] = {15, 2, 4, 16, 17, 3, 23, 13, 12, 14, 27, 26, 25, 33}; // only define the number of pins for the number of digits to be displayed
 int NumberDigits = sizeof(Digits) / sizeof(14);                       // automatically store number of defined pins for later use
 DHT dht(0, DHTTYPE);                                                  // The first parameter is pin, which is required for DHT11 and DHT22, but not required for DHT10 because it's i2c.
@@ -37,8 +34,8 @@ Digit 1 F E D turn on
   Anode G (17) -> D33
 --------------------------------------------
 **/
-int buzzer = 32; /** init Buzzer **/
-int SW = 35;     /** init SW **/
+int SW = 34;     /** init SW **/
+int SW2 = 35;
 /** init LED RGB**/
 int Led_Red = 5;
 int Led_Green = 18;
@@ -61,8 +58,10 @@ int F_1 = 25;
 int G_1 = 33;
 /** Init Array for send an I/O values **/
 int arr[14] = {A_2, B_2, C_2, D_2, E_2, F_2, G_2, A_1, B_1, C_1, D_1, E_1, F_1, G_1};
-int num_digit1;
-int num_digit2;
+void IRAM_ATTR isr()
+{
+   esp_deep_sleep_start();
+}
 void setup()
 {
   Serial.begin(115200);
@@ -71,10 +70,11 @@ void setup()
   Wire.begin();
   dht.begin();
   pinMode(SW, INPUT);
+  pinMode(SW2, INPUT);
+  attachInterrupt(digitalPinToInterrupt(SW),isr,RISING);
   pinMode(Led_Red, OUTPUT);
   pinMode(Led_Green, OUTPUT);
   pinMode(Led_Blue, OUTPUT);
-  pinMode(buzzer, OUTPUT);
   int i;
   for (i = 0; i < 14; i++)
   {
@@ -82,7 +82,15 @@ void setup()
   }
   displayInit();
   ready();
-  esp_sleep_enable_ext0_wakeup(GPIO_NUM_35, 1); // Set Pin 35 for Switch button to wake up the ESP32
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_35, 1); // Set Pin 34 for Switch button to wake up the ESP32
+}
+void error(void)
+{
+  unsigned char j;
+  for (j = 0; j < 14; j++) // Turn off remaining segments
+    digitalWrite(arr[j], 0);
+  digitalWrite(G_2, 1);
+  digitalWrite(G_1, 1);
 }
 void ready(void)
 {
@@ -129,44 +137,6 @@ void digital_lo(void)
   digitalWrite(E_1, 1);
   digitalWrite(F_1, 1);
 }
-void beep_3times(void)
-{
-  digitalWrite(buzzer, HIGH);
-  delay(250);
-  digitalWrite(buzzer, LOW);
-  delay(250);
-  digitalWrite(buzzer, HIGH);
-  delay(250);
-  digitalWrite(buzzer, LOW);
-  delay(250);
-  digitalWrite(buzzer, HIGH);
-  delay(250);
-  digitalWrite(buzzer, LOW);
-  delay(250);
-}
-void beep_5times(void)
-{
-  digitalWrite(buzzer, HIGH);
-  delay(500);
-  digitalWrite(buzzer, LOW);
-  delay(500);
-  digitalWrite(buzzer, HIGH);
-  delay(500);
-  digitalWrite(buzzer, LOW);
-  delay(500);
-  digitalWrite(buzzer, HIGH);
-  delay(500);
-  digitalWrite(buzzer, LOW);
-  delay(500);
-  digitalWrite(buzzer, HIGH);
-  delay(500);
-  digitalWrite(buzzer, LOW);
-  delay(500);
-  digitalWrite(buzzer, HIGH);
-  delay(500);
-  digitalWrite(buzzer, LOW);
-  delay(500);
-}
 void digital_off(void)
 {
   unsigned char j;
@@ -181,23 +151,6 @@ void digital_off(void)
   digitalWrite(G_1, 1);
   digitalWrite(C_1, 1);
   digitalWrite(D_1, 1);
-  delay(2000);
-}
-void digital_on(void)
-{
-  unsigned char j;
-  for (j = 0; j < 14; j++) // Turn off remaining segments
-    digitalWrite(arr[j], 0);
-  /** Turn on **/
-  digitalWrite(E_2, 1);
-  digitalWrite(F_2, 1);
-  digitalWrite(A_2, 1);
-  digitalWrite(B_2, 1);
-  digitalWrite(C_2, 1);
-  digitalWrite(G_1, 1);
-  digitalWrite(C_1, 1);
-  digitalWrite(D_1, 1);
-  digitalWrite(E_1, 1);
   delay(2000);
 }
 // Intlookup defines the active segments per number
@@ -260,11 +213,9 @@ void loop()
   float temp = dht.readTempAndHumidity(temp_hum_val); // Read Temperature
   int state;
   // Reading temperature or humidity takes about 250 milliseconds!
-  // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-  state = digitalRead(SW);
+  state = digitalRead(SW2);
   if (state == HIGH)
   {
-    digital_on();
     delay(1000);
     if (!dht.readTempAndHumidity(temp_hum_val))
     {
@@ -274,60 +225,54 @@ void loop()
       Serial.print("Temperature: ");
       Serial.print(temp_hum_val[1]);
       Serial.println(" *C");
-      // Serial.print(num_digit2);
-      if (temp_hum_val[0] >= 75)
+      if (temp_hum_val[0] >= 50)
       {
-        digitalWrite(Led_Red, LOW);    // LED will be switched off
-        digitalWrite(Led_Green, HIGH); // LED will be switched on
-        digitalWrite(Led_Blue, HIGH);  // LED will be switched on
         digital_hi();
-        beep_5times();
-        delay(1500);
+        delay(1000);
       }
-      else if (temp_hum_val[0] >= 70 && temp_hum_val[0] < 75)
+      if (temp_hum_val[1] >= 30)
       {
         // Red
-        digitalWrite(Led_Red, LOW);    // LED will be switched off
-        digitalWrite(Led_Green, HIGH); // LED will be switched on
-        digitalWrite(Led_Blue, LOW);   // LED will be switched off
-        digital_hi();
-        beep_3times();
-        delay(1500);
+        digitalWrite(Led_Red, HIGH);    // LED will be switched off
+        digitalWrite(Led_Green, LOW); // LED will be switched on
+        digitalWrite(Led_Blue, LOW);  // LED will be switched on
+        delay(1000);
       }
-      else if (temp_hum_val[0] >= 50 && temp_hum_val[0] < 70)
+
+      else if (temp_hum_val[1] >= 25 && temp_hum_val[1] < 30)
       {
-        // Blue
-        digitalWrite(Led_Red, LOW);   // LED will be switched off
-        digitalWrite(Led_Green, LOW); // LED will be switched off
-        digitalWrite(Led_Blue, HIGH); // LED will be switched on
-        digital_hi();
-        delay(1500);
+        // Yellow
+        digitalWrite(Led_Red, HIGH);  // LED will be switched on
+        digitalWrite(Led_Green, HIGH); // LED will be switched off
+        digitalWrite(Led_Blue, LOW);  // LED will be switched off
+        delay(1000);
       }
-      else if (temp_hum_val[0] >= 30 && temp_hum_val[0] < 50)
+      else if (temp_hum_val[1] >= 20 && temp_hum_val[1] < 25)
       {
         // Green
-        digitalWrite(Led_Red, HIGH);  // LED will be switched on
-        digitalWrite(Led_Green, LOW); // LED will be switched off
+        digitalWrite(Led_Red, LOW);  // LED will be switched on
+        digitalWrite(Led_Green, HIGH); // LED will be switched off
         digitalWrite(Led_Blue, LOW);  // LED will be switched off
-        digital_lo();
-        delay(1500);
+        delay(1000);
       }
-      else if (temp_hum_val[0] >= 10 && temp_hum_val[0] < 30)
+      else if (temp_hum_val[1] >= 10 && temp_hum_val[1] < 20)
       {
         // White
-        digitalWrite(Led_Red, HIGH);   // LED will be switched on
-        digitalWrite(Led_Green, HIGH); // LED will be switched on
-        digitalWrite(Led_Blue, HIGH);  // LED will be switched on
-        digital_lo();
-        delay(1500);
+        digitalWrite(Led_Red, HIGH);  // LED will be switched on
+        digitalWrite(Led_Green, HIGH); // LED will be switched off
+        digitalWrite(Led_Blue, HIGH);  // LED will be switched off
+        delay(1000);
       }
+      else if (temp_hum_val[0] < 50)
+      {       
+        digital_lo();
+        delay(1000);
+      }
+
       else
       {
-        digitalWrite(Led_Red, LOW);   // LED will be switched off
-        digitalWrite(Led_Green, LOW); // LED will be switched off
-        digitalWrite(Led_Blue, LOW);  // LED will be switched off
-        digital_lo();
-        delay(1500);
+        error();
+        delay(1000);
         Serial.println("Failed to get temprature and humidity value.");
       }
       delay(1000);
@@ -346,3 +291,7 @@ void loop()
   }
   delay(1500);
 }
+/**
+6088126	Peerapat Potch-a-nant
+6088130	Sunat	Praphanwong
+**/
